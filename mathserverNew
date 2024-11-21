@@ -1,0 +1,402 @@
+#include <stdio.h>
+#include <pthread.h>
+#include <string.h>
+#include <stdlib.h>
+
+
+typedef struct{
+    int data;
+    pthread_mutex_t lock;
+    char* buffer[10];
+    int logCounter;
+    int operationCounter;
+    char operationQueue[200][1024];
+} context;
+
+context contexts[16]; // contexts 
+pthread_mutex_t logLock = PTHREAD_MUTEX_INITIALIZER;
+char** tokenize_input(char* input) {
+    char** tokens = NULL;
+    char* token = strtok(input, " ");
+    int num_tokens = 0;
+
+    while (token != NULL) {
+        num_tokens++;
+        tokens = realloc(tokens, num_tokens * sizeof(char*));
+        tokens[num_tokens - 1] = malloc(strlen(token) + 1);
+        strcpy(tokens[num_tokens - 1], token);
+        token = strtok(NULL, " ");
+    }
+
+    num_tokens++;
+    tokens = realloc(tokens, num_tokens * sizeof(char*));
+    tokens[num_tokens - 1] = NULL;
+
+    return tokens;
+}
+
+int fibonacci(int n) {
+    if (n <= 1) {
+        return n;
+    } else {
+        return fibonacci(n - 1) + fibonacci(n - 2);
+    }
+}
+
+int isPrime(int num) {
+    if (num <= 1) {
+        return 0;
+    }
+    for (int i = 2; i * i <= num; i++) {
+        if (num % i == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int* findPrime(int n, int* counter) {
+    int* primes = (int*)malloc(n * sizeof(int));
+    for (int i = 2; i <= n; i++) {
+        if (isPrime(i)) {
+            primes[*counter] = i;
+            (*counter)++;
+        }
+    }
+    return primes;
+}
+
+double leibniz(int n) {
+    double out = 0.0;
+    int sign = 1;
+    for (int i = 0; i < n; i++) {
+        out += sign / (2 * i + 1.0);
+        sign *= -1;
+    }
+    out *= 4;
+    return out;
+}
+
+void* processOperations(void* cxt);
+
+void logOperation(const char* inputLog);
+FILE* output_file;
+
+
+int main(int argc, char* argv[]) {
+    const char usage[] = "Usage: mathserver.out <input trace> <output trace>\n";
+    char* input_trace;
+    char* output_trace;
+    char buffer[1024];
+    pthread_t threadList[16];
+
+    // Parse command line arguments
+    if (argc != 3) {
+        printf("%s", usage);
+        return 1;
+    }
+    
+    input_trace = argv[1];
+    output_trace = argv[2];
+
+    // Open input and output files
+    FILE* input_file = fopen(input_trace, "r");
+    if (!input_file) {
+        perror("Error opening input file");
+        return 1;
+    }
+
+    FILE* output_file = fopen(output_trace, "w");
+
+    if (!output_file) {
+        perror("Error opening output file");
+        fclose(input_file);
+        return 1;
+    }
+
+    for (int i = 0; i < 16; i++)
+    {
+        contexts[i].data = 0;
+        pthread_mutex_init(&contexts[i].lock, NULL);
+        contexts[i].logCounter = 0;
+        contexts[i].operationCounter = 0;
+
+        for (int j = 0; j < 10; j++)
+        {
+            contexts[i].buffer[j] = malloc(1024 * sizeof(char));  // Allocate space for log line
+            if (!contexts[i].buffer[j]) {
+               perror("Error: Memory Allocation");
+
+               exit(1);
+           }
+        } 
+    }
+    
+
+    while ( !feof(input_file) ) {
+        // Read input file line by line
+        char *rez = fgets(buffer, sizeof(buffer), input_file);
+        if ( !rez )
+            break;
+        else {
+            // Remove endline character
+            buffer[strlen(buffer) - 1] = '\0';
+        }
+        char** tokens = tokenize_input(buffer);
+        // CONTINUE...
+        // int test = 1234;
+        // fprintf(output_file, "%s\n", tokens[0]);
+
+        if (strcmp(tokens[0], "set") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), atoi(tokens[2]));
+            tempContext->operationCounter++;
+            
+            
+            // contexts[tempContext] = atoi(tokens[2]);
+            // fprintf(output_file, "ctx %.2d: set to value %d\n", tempContext, contexts[tempContext]);
+            // fflush(output_file);
+
+        } else if (strcmp(tokens[0], "add") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), atoi(tokens[2]));
+            tempContext->operationCounter++;
+            // contexts[tempContext] += atoi(tokens[2]);
+            // fprintf(output_file, "ctx %.2d: add %d (result: %d)\n", tempContext, atoi(tokens[2]), contexts[tempContext]);
+            // fflush(output_file);
+
+        } else if (strcmp(tokens[0], "sub") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), atoi(tokens[2]));
+            tempContext->operationCounter++;
+            // int tempContext = atoi(tokens[1]);
+            // contexts[tempContext] -= atoi(tokens[2]);
+            // fprintf(output_file, "ctx %.2d: sub %d (result: %d)\n", tempContext, atoi(tokens[2]), contexts[tempContext]);
+            // fflush(output_file);
+
+
+        } else if (strcmp(tokens[0], "mul") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), atoi(tokens[2]));
+            tempContext->operationCounter++;
+            // int tempContext = atoi(tokens[1]);
+            // contexts[tempContext] *= atoi(tokens[2]);
+            // fprintf(output_file, "ctx %.2d: mul %d (result: %d)\n", tempContext, atoi(tokens[2]), contexts[tempContext]);
+            // fflush(output_file);
+
+        } else if (strcmp(tokens[0], "div") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), atoi(tokens[2]));
+            tempContext->operationCounter++;
+            // int tempContext = atoi(tokens[1]);
+            // contexts[tempContext] /= atoi(tokens[2]);
+            // fprintf(output_file, "ctx %.2d: div %d (result: %d)\n", tempContext, atoi(tokens[2]), contexts[tempContext]);
+            // fflush(output_file);
+
+        } else if (strcmp(tokens[0], "fib") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), 0);
+            tempContext->operationCounter++;
+
+            // int tempContext = atoi(tokens[1]);
+            // int tempFib = fibonacci(contexts[tempContext]);
+            // fprintf(output_file, "ctx %.2d: fib (result: %d)\n", tempContext, tempFib);
+            // fflush(output_file);
+
+        } else if (strcmp(tokens[0], "pia") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), 0);
+            tempContext->operationCounter++;
+
+            // int tempContext = atoi(tokens[1]);
+            // double tempPi = leibniz(contexts[tempContext]);
+            // fprintf(output_file, "ctx %.2d: pia (result %.15f)\n", tempContext, tempPi);
+            // fflush(output_file);
+
+
+        } else if (strcmp(tokens[0], "pri") == 0){
+            context* tempContext = &contexts[atoi(tokens[1])];
+            snprintf(tempContext->operationQueue[tempContext->operationCounter], 1024, "%s %d %d", tokens[0], atoi(tokens[1]), 0);
+            tempContext->operationCounter++;
+            // int tempContext = atoi(tokens[1]);
+            // int counter = 0;
+            // int* tempPrime = findPrime(contexts[tempContext], &counter);
+            // fprintf(output_file, "ctx %.2d: primes (result:", tempContext);
+            
+            // fprintf(output_file, " %d", tempPrime[0]);
+            // for (int i = 1; i < counter; i++)
+            // {
+            //     fprintf(output_file, ", %d", tempPrime[i]);
+            // }
+            // fprintf(output_file, ")\n");
+            // fflush(output_file);
+
+
+            // free(tempPrime);
+        }
+
+        for (int i = 0; tokens[i] != NULL; i++) free(tokens[i]);
+        free(tokens);
+    }
+    for (int i = 0; i < 16; i++)
+    {
+        int* tempContext = malloc(sizeof(int));
+        *tempContext = i;
+        pthread_create(&threadList[i], NULL, processOperations, tempContext);
+    }
+    
+    for (int i = 0; i < 16; i++)
+    {
+        pthread_join(threadList[i], NULL);
+    }
+    
+    for (int i = 0; i < 16; i++)
+    {
+        for (int x = 0; x < 10; x++)
+        {
+            free(contexts[i].buffer[x]);
+        }
+        
+    }
+    
+
+    fclose(input_file);
+    fflush(output_file);
+    fclose(output_file);
+
+    return 0;
+}
+
+void logOperation(const char* inputLog){
+    printf("here");
+    pthread_mutex_lock(&logLock);
+
+    printf("Current Log: %s", inputLog);
+
+    if (strstr(inputLog, "pri") == NULL){
+        fprintf(output_file, "%s\n", inputLog);
+    } else {
+        int tempContext;
+        int tempValue;
+
+        if (sscanf(inputLog,  "ctx %d: pri", &tempContext) == 2) {
+            int counter = 0;
+            context* tempPointCxt = &contexts[tempContext];
+            tempValue = tempPointCxt->data;
+            int* tempPrime = findPrime(tempValue, &counter);
+            fprintf(output_file, "ctx %.2d: primes (result: %d", tempContext, tempPrime[0]);
+            
+            // fprintf(output_file, " %d", tempPrime[0]);
+            for (int i = 1; i < counter; i++)
+            {
+                fprintf(output_file, ", %d", tempPrime[i]);
+            }
+            fprintf(output_file, ")\n");
+            free(tempPrime);
+        } 
+
+    }
+
+    pthread_mutex_unlock(&logLock);
+
+}
+
+
+void* processOperations(void* cxt){
+    int tempContext = *((int*)cxt);
+    free(cxt);
+
+    context* currentContext = &contexts[tempContext];
+    
+    char buffer[1024];
+    char tempOperation[10];
+    int tempValue;
+
+    for (int i = 0; i < currentContext->operationCounter; i++)
+    {
+        pthread_mutex_lock(&currentContext->lock);
+
+        printf("Current Operation: ctx %.2d %s\n", tempContext, currentContext->operationQueue[i]);
+
+        if (currentContext->logCounter == 10){
+            for (int x = 0; x < 10; x++)
+            {
+                printf("flushing: %s", currentContext->buffer[x]);
+
+                logOperation(currentContext->buffer[x]);
+            }
+            currentContext->logCounter = 0;
+        }
+
+        int currentOperation = sscanf(currentContext->operationQueue[i], "%s %d %d", tempOperation, &tempContext, &tempValue);
+
+        if (currentOperation != 3){
+            printf("Error: Formating error for cxt %d\n", tempContext);
+            pthread_mutex_unlock(&currentContext->lock);
+            continue;
+        }
+
+        printf("Current Operation: %s %d %d\n", tempOperation, tempContext, tempValue);
+
+        if (strcmp(tempOperation, "set") == 0){
+            currentContext->data = tempValue;
+            currentContext->logCounter++;
+            snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: set to value %d\n", tempContext, tempValue);
+
+        } else if (strcmp(tempOperation, "add") == 0){
+            currentContext->data += tempValue;
+            currentContext->logCounter++;
+            snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: add %d (result: %d)\n", tempContext, tempValue, currentContext->data);
+
+        } else if (strcmp(tempOperation, "sub") == 0){
+            currentContext->data -= tempValue;
+            currentContext->logCounter++;
+            snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: sub %d (result: %d)\n", tempContext, tempValue, currentContext->data);
+
+        } 
+        // else if (strcmp(tempOperation, "div") == 0){
+        //     currentContext->logCounter++;
+        //     currentContext->data /= tempValue;
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: div %d (result: %d)\n", tempContext, tempValue, currentContext->data);
+
+        //     if (tempValue != 0){
+        //     currentContext->data /= tempValue;
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: div %d (result: %d)\n", tempContext, tempValue, currentContext->data);
+        //     } else {
+        //         snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: div 0\n", tempContext);                
+        //     }
+            
+        // } else if (strcmp(tempOperation, "mul") == 0){
+        //     currentContext->data *= tempValue;
+        //     currentContext->logCounter++;
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: mul %d (result: %d)\n", tempContext, tempValue, currentContext->data);
+
+        // } else if (strcmp(tempOperation, "fib") == 0){
+        //     int tempFib = fibonacci(currentContext->data);
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: fib (result: %d)\n", tempContext, tempFib);
+        //     currentContext->logCounter++;
+
+        // } else if (strcmp(tempOperation, "pia") == 0){
+        //     double tempPi = leibniz(currentContext->data);
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: pia (result %.15f)\n", tempContext, tempPi);
+        //     currentContext->logCounter++;
+
+        // } else if (strcmp(tempOperation, "pri") == 0){
+            
+        //     snprintf(currentContext->buffer[currentContext->logCounter], sizeof(buffer), "ctx %.2d: pri\n", tempContext);
+        //     currentContext->logCounter++;
+
+            
+        // }
+        pthread_mutex_unlock(&currentContext->lock);
+    }
+
+    if (currentContext->logCounter > 0){
+        for (int i = 0; i < currentContext->logCounter; i++)
+        {
+            logOperation(currentContext->buffer[i]);
+        }
+        currentContext->logCounter = 0;
+    }
+    return NULL;
+}
